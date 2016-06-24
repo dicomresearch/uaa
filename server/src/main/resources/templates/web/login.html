@@ -1,29 +1,24 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
       layout:decorator="layouts/main">
-<div class="island" layout:fragment="page-content">
-    <div id="hb-login">
-        <div class="data-block grey clearfix login-form">
-            <form th:action="@{/login.do}" id="loginForm" method="post" novalidate="novalidate" accept-charset="UTF-8">
-                <input type="hidden" name="ret" value=""/>
-                <fieldset>
-                    <legend>Welcome!</legend>
-                    <input th:each="prompt,iter : ${prompts}"
-                           th:name="${prompt.key}"
-                           th:type="${prompt.value[0]}"
-                           th:placeholder="${prompt.value[1]}"
-                           th:attr="autocomplete=${(prompt.value[0] == 'password') ? 'off' : null}"
-                           th:autofocus="${iter.index} == 0"
-                           class="form-control"/>
-                    <div class="control-group clearfix">
-                        <button type="submit" class="btn pull-left btn-primary">Sign in</button>
-                    </div>
-                    <div class="control-group error">
-                        <span id="login-errors" class="help-inline"></span>
-                    </div>
-                </fieldset>
-            </form>
-        </div>
-    </div>
+<div layout:fragment="page-content" class="container">
+    <form th:action="@{/login.do}" id="loginForm" method="post" novalidate="novalidate" accept-charset="UTF-8" class="form-signin">
+        <h2>Please sign in</h2>
+            <div th:each="prompt,iter : ${prompts}">
+                <input
+                    th:name="${prompt.key}"
+                    th:type="${prompt.value[0]}"
+                    th:placeholder="${prompt.value[1]}"
+                    th:attr="autocomplete=${(prompt.value[0] == 'password') ? 'off' : null}"
+                    th:autofocus="${iter.index} == 0"
+                    class="form-control"/><br />
+            </div>
+            <div class="control-group clearfix">
+                <button type="submit" class="btn pull-left btn-primary">Sign in</button>
+            </div>
+            <div class="control-group error">
+                <span id="login-errors" class="help-inline"></span>
+            </div>
+    </form>
 </div>
 </html>
