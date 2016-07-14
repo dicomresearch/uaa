@@ -123,6 +123,11 @@ public class RemoteScimUserProvisioning implements ScimUserProvisioning {
     }
 
     @Override
+    public ScimUser retrieveByUserName(String userName) {
+        return null;    // todo: impl if necessary
+    }
+
+    @Override
     public ScimUser delete(String id, int version) throws ScimResourceNotFoundException {
         HttpHeaders headers = new HttpHeaders();
         headers.set("If-Match", String.format("%d", version));

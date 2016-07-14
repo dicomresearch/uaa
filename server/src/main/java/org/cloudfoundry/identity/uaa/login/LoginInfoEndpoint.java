@@ -12,8 +12,11 @@
  *******************************************************************************/
 package org.cloudfoundry.identity.uaa.login;
 
+import org.cloudfoundry.identity.uaa.account.ChangePasswordService;
+import org.cloudfoundry.identity.uaa.account.PasswordConfirmationValidation;
 import org.cloudfoundry.identity.uaa.authentication.AuthzAuthenticationRequest;
 import org.cloudfoundry.identity.uaa.authentication.UaaAuthentication;
+import org.cloudfoundry.identity.uaa.authentication.UaaAuthenticationDetails;
 import org.cloudfoundry.identity.uaa.authentication.UaaPrincipal;
 import org.cloudfoundry.identity.uaa.codestore.ExpiringCode;
 import org.cloudfoundry.identity.uaa.codestore.ExpiringCodeStore;
@@ -24,6 +27,11 @@ import org.cloudfoundry.identity.uaa.provider.*;
 import org.cloudfoundry.identity.uaa.provider.saml.LoginSamlAuthenticationToken;
 import org.cloudfoundry.identity.uaa.provider.saml.SamlIdentityProviderConfigurator;
 import org.cloudfoundry.identity.uaa.provider.saml.SamlRedirectUtils;
+import org.cloudfoundry.identity.uaa.scim.*;
+import org.cloudfoundry.identity.uaa.scim.exception.InvalidPasswordException;
+import org.cloudfoundry.identity.uaa.scim.exception.MemberAlreadyExistsException;
+import org.cloudfoundry.identity.uaa.scim.exception.ScimResourceNotFoundException;
+import org.cloudfoundry.identity.uaa.security.web.UaaAuthenticationSuccessHandler;
 import org.cloudfoundry.identity.uaa.util.DomainFilter;
 import org.cloudfoundry.identity.uaa.util.JsonUtils;
 import org.cloudfoundry.identity.uaa.util.MapCollector;
@@ -31,12 +39,16 @@ import org.cloudfoundry.identity.uaa.util.UaaStringUtils;
 import org.cloudfoundry.identity.uaa.zone.IdentityZone;
 import org.cloudfoundry.identity.uaa.zone.IdentityZoneConfiguration;
 import org.cloudfoundry.identity.uaa.zone.IdentityZoneHolder;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.support.PropertiesLoaderUtils;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.codec.Base64;
 import org.springframework.security.oauth2.provider.ClientDetails;
 import org.springframework.security.oauth2.provider.ClientDetailsService;
@@ -741,13 +753,63 @@ public class LoginInfoEndpoint {
     }
 
     @RequestMapping(value = "/change_login")
-    public String changeLogin() {
+    public String changeLogin(Model model, Authentication authentication) {
+        final ScimUser currentUser = scimUserProvisioning.retrieveByUserName(authentication.getName());
+        if (currentUser != null && currentUser.getEmails() != null && !currentUser.getEmails().isEmpty()) {
+            model.addAttribute("new_login", currentUser.getEmails().get(0));
+        }
         return "change_login";
     }
 
+    @Autowired
+    ChangePasswordService changePasswordService;
+
+    @Autowired
+    ScimUserProvisioning scimUserProvisioning;
+
+    @Autowired
+    ScimGroupMembershipManager membershipManager;
+
     @RequestMapping(value = "/change_login.do", method = POST)
-    public String changeLoginDo(HttpServletRequest request, HttpServletResponse response, Authentication authentication, RedirectAttributes redirectAttributes) throws ServletException, IOException {
-        // todo: actually change login, and fill login\password, if possible
+    public String changeLoginDo(
+            Model model,
+            @RequestParam("new_login") String newLogin,
+            @RequestParam("current_password") String currentPassword,
+            @RequestParam("new_password") String newPassword,
+            @RequestParam("confirm_password") String confirmPassword,
+            HttpServletRequest request, HttpServletResponse response, Authentication authentication) throws ServletException, IOException {
+        PasswordConfirmationValidation validation = new PasswordConfirmationValidation(newPassword, confirmPassword);
+        if (!validation.valid()) {
+            model.addAttribute("message_code", validation.getMessageCode());
+            response.setStatus(HttpStatus.UNPROCESSABLE_ENTITY.value());
+            return "change_login";
+        }
+        final ScimUser currentUser = scimUserProvisioning.retrieveByUserName(authentication.getName());
+        final ScimUser newUser = new ScimUser();
+        BeanUtils.copyProperties(currentUser, newUser, "groups");
+        newUser.setId(UUID.randomUUID().toString());
+        newUser.setPassword(newPassword);
+        newUser.setUserName(newLogin);
+        scimUserProvisioning.createUser(newUser, newPassword);
+        final Set<ScimGroup> groupsWithMember = membershipManager.getGroupsWithMember(currentUser.getId(), false);
+        if (groupsWithMember != null) {
+            for (ScimGroup group : groupsWithMember) {
+                if (group.getDisplayName().equals(UaaAuthenticationSuccessHandler.TEMP_LOGIN_SCOPE)) {
+                    continue;
+                } else {
+                    try {
+                        membershipManager.addMember(group.getId(), new ScimGroupMember(newUser.getId()));
+                    } catch (ScimResourceNotFoundException e) {
+                        e.printStackTrace();
+                    } catch (MemberAlreadyExistsException e) {
+                        // todo: m.b. filter default groups
+                    }
+                }
+            }
+        }
+        currentUser.setActive(false);
+        scimUserProvisioning.update(currentUser.getId(), currentUser);
+
         // todo: it's also possible to logout explicitly here. See: org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler
         return "redirect:logout";
     }

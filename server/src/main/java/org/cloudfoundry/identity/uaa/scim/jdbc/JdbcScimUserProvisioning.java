@@ -77,6 +77,7 @@ public class JdbcScimUserProvisioning extends AbstractQueryable<ScimUser>
                     + ",password) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
     public static final String UPDATE_USER_SQL = "update users set version=?, lastModified=?, userName=?, email=?, givenName=?, familyName=?, active=?, phoneNumber=?, verified=?, origin=?, external_id=?, salt=? where id=? and version=? and identity_zone_id=?";
+    public static final String UPDATE_USER_NAME_SQL = "update users set userName=? where userName=?";
 
     public static final String DEACTIVATE_USER_SQL = "update users set active=? where id=? and identity_zone_id=?";
 
@@ -89,6 +90,7 @@ public class JdbcScimUserProvisioning extends AbstractQueryable<ScimUser>
     public static final String READ_PASSWORD_SQL = "select password from users where id=? and identity_zone_id=?";
 
     public static final String USER_BY_ID_QUERY = "select " + USER_FIELDS + " from users " + "where id=? and identity_zone_id=?";
+    public static final String USER_BY_NAME_QUERY = "select " + USER_FIELDS + " from users " + "where username=? and identity_zone_id=?";
 
     public static final String ALL_USERS = "select " + USER_FIELDS + " from users";
 
@@ -326,6 +328,16 @@ public class JdbcScimUserProvisioning extends AbstractQueryable<ScimUser>
         }
 
         return passwordEncoder.matches(password, currentPassword);
+    }
+
+    @Override
+    public ScimUser retrieveByUserName(String userName) {
+        try {
+            ScimUser u = jdbcTemplate.queryForObject(USER_BY_NAME_QUERY, mapper, userName, IdentityZoneHolder.get().getId());
+            return u;
+        } catch (EmptyResultDataAccessException e) {
+            throw new ScimResourceNotFoundException("User (" + userName + ") does not exist");
+        }
     }
 
     @Override
