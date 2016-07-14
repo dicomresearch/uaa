@@ -216,6 +216,9 @@
     <bean id="savedRequestCache" class="org.springframework.security.web.savedrequest.HttpSessionRequestCache">
         <property name="requestMatcher" ref="uiAuthorizeRequestMatcher"/>
     </bean>
+
+    <bean id="uaaAuthenticationSuccessHandler" class="org.cloudfoundry.identity.uaa.security.web.UaaAuthenticationSuccessHandler"/>
+
     <http name="uiSecurity" request-matcher-ref="uiRequestMatcher" use-expressions="false"
           authentication-manager-ref="zoneAwareAuthzAuthenticationManager" xmlns="http://www.springframework.org/schema/security">
       <intercept-url pattern="/login**" access="IS_AUTHENTICATED_ANONYMOUSLY" />
@@ -225,9 +228,10 @@
                   username-parameter="username"
                   password-parameter="password"
                   login-processing-url="/login.do"
+                  authentication-success-handler-ref="uaaAuthenticationSuccessHandler"
                   authentication-failure-handler-ref="loginAuthenticationFailureHandler"
                   authentication-details-source-ref="authenticationDetailsSource"
-                  default-target-url="/"/>
+      />
       <!--<logout logout-url="/logout.do" success-handler-ref="logoutHandler" invalidate-session="true"/>-->
       <custom-filter ref="logoutFilter" after="LOGOUT_FILTER"/>
       <custom-filter ref="samlLogoutFilter" before="LOGOUT_FILTER"/>
@@ -420,7 +424,7 @@
     </bean>
 
     <!-- Handler deciding where to redirect user after successful login -->
-    <bean id="successRedirectHandler" class="org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler" />
+    <bean id="successRedirectHandler" class="org.cloudfoundry.identity.uaa.security.UaaSavedRequestAwareAuthenticationSuccessHandler" />
 
     <bean id="openIdUserDetailsService" class="org.cloudfoundry.identity.uaa.account.OpenIdUserDetailsService" />
 

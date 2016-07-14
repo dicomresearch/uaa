@@ -20,12 +20,7 @@ import org.cloudfoundry.identity.uaa.codestore.ExpiringCodeStore;
 import org.cloudfoundry.identity.uaa.codestore.ExpiringCodeType;
 import org.cloudfoundry.identity.uaa.constants.OriginKeys;
 import org.cloudfoundry.identity.uaa.oauth.client.ClientConstants;
-import org.cloudfoundry.identity.uaa.provider.AbstractIdentityProviderDefinition;
-import org.cloudfoundry.identity.uaa.provider.AbstractXOAuthIdentityProviderDefinition;
-import org.cloudfoundry.identity.uaa.provider.IdentityProvider;
-import org.cloudfoundry.identity.uaa.provider.IdentityProviderProvisioning;
-import org.cloudfoundry.identity.uaa.provider.SamlIdentityProviderDefinition;
-import org.cloudfoundry.identity.uaa.provider.UaaIdentityProviderDefinition;
+import org.cloudfoundry.identity.uaa.provider.*;
 import org.cloudfoundry.identity.uaa.provider.saml.LoginSamlAuthenticationToken;
 import org.cloudfoundry.identity.uaa.provider.saml.SamlIdentityProviderConfigurator;
 import org.cloudfoundry.identity.uaa.provider.saml.SamlRedirectUtils;
@@ -50,15 +45,12 @@ import org.springframework.security.web.savedrequest.SavedRequest;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseBody;
-import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -71,28 +63,17 @@ import java.security.NoSuchAlgorithmException;
 import java.security.Principal;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static java.util.Objects.isNull;
-import static org.cloudfoundry.identity.uaa.constants.OriginKeys.OAUTH20;
-import static org.cloudfoundry.identity.uaa.constants.OriginKeys.OIDC10;
-import static org.cloudfoundry.identity.uaa.constants.OriginKeys.UAA;
+import static org.cloudfoundry.identity.uaa.constants.OriginKeys.*;
 import static org.cloudfoundry.identity.uaa.util.UaaUrlUtils.addSubdomainToUrl;
 import static org.springframework.util.StringUtils.hasText;
 import static org.springframework.web.bind.annotation.RequestMethod.GET;
+import static org.springframework.web.bind.annotation.RequestMethod.POST;
 
 /**
  * Controller that sends login info (e.g. prompts) to clients wishing to
@@ -648,21 +629,21 @@ public class LoginInfoEndpoint {
         return model;
     }
 
-    private Map<String,String> getSelfServiceLinks() {
+    private Map<String, String> getSelfServiceLinks() {
         Map<String, String> selfServiceLinks = new HashMap<>();
         IdentityZone zone = IdentityZoneHolder.get();
         IdentityProvider<UaaIdentityProviderDefinition> uaaIdp = providerProvisioning.retrieveByOrigin(OriginKeys.UAA, IdentityZoneHolder.get().getId());
-        boolean disableInternalUserManagement = (uaaIdp.getConfig()!=null) ? uaaIdp.getConfig().isDisableInternalUserManagement() : false;
-        boolean selfServiceLinksEnabled = (zone.getConfig()!=null) ? zone.getConfig().getLinks().getSelfService().isSelfServiceLinksEnabled() : true;
-        String signup = zone.getConfig()!=null ? zone.getConfig().getLinks().getSelfService().getSignup() : null;
-        String passwd = zone.getConfig()!=null ? zone.getConfig().getLinks().getSelfService().getPasswd() : null;
+        boolean disableInternalUserManagement = (uaaIdp.getConfig() != null) ? uaaIdp.getConfig().isDisableInternalUserManagement() : false;
+        boolean selfServiceLinksEnabled = (zone.getConfig() != null) ? zone.getConfig().getLinks().getSelfService().isSelfServiceLinksEnabled() : true;
+        String signup = zone.getConfig() != null ? zone.getConfig().getLinks().getSelfService().getSignup() : null;
+        String passwd = zone.getConfig() != null ? zone.getConfig().getLinks().getSelfService().getPasswd() : null;
 
         if (selfServiceLinksEnabled && !disableInternalUserManagement) {
             selfServiceLinks.put(CREATE_ACCOUNT_LINK, "/create_account");
             selfServiceLinks.put("register", "/create_account");
             selfServiceLinks.put(FORGOT_PASSWORD_LINK, "/forgot_password");
             selfServiceLinks.put("passwd", "/forgot_password");
-            if(IdentityZoneHolder.isUaa()) {
+            if (IdentityZoneHolder.isUaa()) {
                 if (hasText(signup)) {
                     selfServiceLinks.put(CREATE_ACCOUNT_LINK, signup);
                     selfServiceLinks.put("register", signup);
@@ -681,9 +662,9 @@ public class LoginInfoEndpoint {
         try {
             URI uri = new URI(baseUrl);
             setUaaHost(uri.getHost());
-            if (uri.getPort()!=443 && uri.getPort()!=80 && uri.getPort()>0) {
+            if (uri.getPort() != 443 && uri.getPort() != 80 && uri.getPort() > 0) {
                 //append non standard ports to the hostname
-                setUaaHost(getUaaHost()+":"+uri.getPort());
+                setUaaHost(getUaaHost() + ":" + uri.getPort());
             }
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException("Could not extract host from URI: " + baseUrl);
@@ -756,6 +737,18 @@ public class LoginInfoEndpoint {
     }
 
     @ResponseStatus(value = HttpStatus.FORBIDDEN, reason = "Unknown authentication token type, unable to derive user ID.")
-    public static final class UnknownPrincipalException extends RuntimeException {}
+    public static final class UnknownPrincipalException extends RuntimeException {
+    }
 
+    @RequestMapping(value = "/change_login")
+    public String changeLogin() {
+        return "change_login";
+    }
+
+    @RequestMapping(value = "/change_login.do", method = POST)
+    public String changeLoginDo(HttpServletRequest request, HttpServletResponse response, Authentication authentication, RedirectAttributes redirectAttributes) throws ServletException, IOException {
+        // todo: actually change login, and fill login\password, if possible
+        // todo: it's also possible to logout explicitly here. See: org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler
+        return "redirect:logout";
+    }
 }
